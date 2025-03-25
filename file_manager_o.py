@@ -1,5 +1,4 @@
 import os
-import sys
 import shutil
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -999,37 +998,23 @@ class FileManagerApp:
             "auto_increment": self.auto_increment.get()
         }
         
-        # 実行ファイルのディレクトリを基準にする
-        if getattr(sys, 'frozen', False):
-            # PyInstallerで実行される場合
-            application_path = os.path.dirname(sys.executable)
-        else:
-            # 通常のPythonスクリプトとして実行される場合
-            application_path = os.path.dirname(os.path.abspath(__file__))
-        
-        settings_path = os.path.join(application_path, 'file_manager_settings.json')
+    # キーボードイベントのデバッグ用メソッド
+    def debug_key_event(self, event):
+        """キーボードイベントのデバッグ情報を表示する"""
+        key_info = f"キー情報: char={event.char}, keysym={event.keysym}, keycode={event.keycode}, state={event.state}"
+        print(key_info)
+        self.status_var.set(key_info)
         
         try:
-            with open(settings_path, 'w') as f:
+            with open('file_manager_settings.json', 'w') as f:
                 json.dump(settings, f)
-            self.status_var.set(f"設定を保存しました: {settings_path}")
         except Exception as e:
             messagebox.showerror("エラー", f"設定保存中にエラーが発生しました: {str(e)}")
 
     def load_settings(self):
-        # 実行ファイルのディレクトリを基準にする
-        if getattr(sys, 'frozen', False):
-            # PyInstallerで実行される場合
-            application_path = os.path.dirname(sys.executable)
-        else:
-            # 通常のPythonスクリプトとして実行される場合
-            application_path = os.path.dirname(os.path.abspath(__file__))
-        
-        settings_path = os.path.join(application_path, 'file_manager_settings.json')
-        
         try:
-            if os.path.exists(settings_path):
-                with open(settings_path, 'r') as f:
+            if os.path.exists('file_manager_settings.json'):
+                with open('file_manager_settings.json', 'r') as f:
                     settings = json.load(f)
                 
                 if "filename_templates" in settings:
@@ -1045,17 +1030,8 @@ class FileManagerApp:
                 
                 if "auto_increment" in settings:
                     self.auto_increment.set(settings["auto_increment"])
-                    
-                self.status_var.set(f"設定を読み込みました: {settings_path}")
         except Exception as e:
             messagebox.showerror("エラー", f"設定読み込み中にエラーが発生しました: {str(e)}")
-    
-    # キーボードイベントのデバッグ用メソッド
-    def debug_key_event(self, event):
-        """キーボードイベントのデバッグ情報を表示する"""
-        key_info = f"キー情報: char={event.char}, keysym={event.keysym}, keycode={event.keycode}, state={event.state}"
-        print(key_info)
-        self.status_var.set(key_info)
 
 def main():
     root = tk.Tk()
