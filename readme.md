@@ -14,11 +14,6 @@ This application is a utility tool for efficiently renaming and moving files. It
 
 ## インストール方法 / Installation
 
-### 実行ファイルからのインストール / Installation from Executable
-
-1. 最新の実行ファイル（`file_manager.exe`）をダウンロードします。
-2. ダウンロードしたファイルを任意のフォルダに配置します。
-3. ファイルをダブルクリックして実行します。
 
 ### ソースコードからのビルド / Building from Source
 
