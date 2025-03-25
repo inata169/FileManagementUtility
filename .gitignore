@@ -1,0 +1,34 @@
+# ビルド出力ディレクトリ
+build/
+dist/
+
+# PyInstaller関連ファイル
+*.spec
+
+# Pythonキャッシュファイル
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 仮想環境
+venv/
+env/
+.env
+.venv
+
+# ユーザー設定ファイル
+file_manager_settings.json
+
+# エディタの設定ファイル
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# システムファイル
+.DS_Store
+Thumbs.db
+
+# ログファイル
+*.log
