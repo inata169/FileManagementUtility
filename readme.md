@@ -109,4 +109,4 @@ This application is a utility tool for efficiently renaming and moving files. It
 
 ## 作者 / Author
 
-[作者名] - 最終更新: 2025年3月25日
+[inata169] - 最終更新: 2025年3月25日
