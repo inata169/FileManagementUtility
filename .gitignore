@@ -1,6 +1,6 @@
 # ビルド出力ディレクトリ
 build/
-dist/
+#dist/
 
 # PyInstaller関連ファイル
 *.spec
