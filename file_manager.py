@@ -1,5 +1,6 @@
 import os
 import sys
+import tkinterdnd2 as tkdnd
 import shutil
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -13,29 +14,135 @@ class FileManagerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("ファイル管理ユーティリティ")
-        self.root.geometry("800x600")
+        self.root.geometry('550x780')
         
         # 変数の初期化
         self.sequence_number = tk.StringVar(value="1")
-        self.sequence_digits = tk.StringVar(value="4")  # 連番の桁数設定用
-        self.auto_increment = tk.BooleanVar(value=False)  # 連番自動増加用
+        self.sequence_digits = tk.StringVar(value="4")
+        self.auto_increment = tk.BooleanVar(value=False)
         self.custom_text = tk.StringVar()
         self.date_format = tk.StringVar(value="%Y%m%d")
         self.filename_pattern = tk.StringVar()
         self.destination_path = tk.StringVar()
         self.selected_file_path = tk.StringVar()
-        self.batch_mode = tk.BooleanVar(value=False)  # 一括処理モード用
-        self.selected_files = []  # 一括処理用のファイルリスト
+        self.batch_mode = tk.BooleanVar(value=False)
+        self.selected_files = []
+        self.simple_mode = tk.BooleanVar(value=True)  # 詳細モードON
+        self.component_window = None
+
+        # プロファイル管理はテンプレート管理に統合したため削除
+        self.profile_combo = ttk.Combobox()
+
+        # 表示切替の初期値
+        self.show_component_frame = tk.BooleanVar(value=True)
+        self.show_profile_frame = tk.BooleanVar(value=True)
+
+        # 変数変更時にプレビューと設定保存を自動実行
+        vars_to_trace = [
+            self.sequence_number, self.sequence_digits, self.auto_increment,
+            self.custom_text, self.date_format, self.filename_pattern,
+            self.destination_path, self.selected_file_path, self.batch_mode
+        ]
+        for var in vars_to_trace:
+            var.trace_add("write", lambda *args: (self.update_filename_preview(), self.save_settings()))
         
+        # モード切替と表示切替ボタン
+        mode_frame = ttk.Frame(self.root)
+        mode_frame.pack(fill=tk.X, padx=10, pady=5)
+        ttk.Label(mode_frame, text="モード切替:").pack(side=tk.LEFT, padx=5)
+        self.mode_toggle = ttk.Checkbutton(mode_frame, text="簡単・詳細", variable=self.simple_mode, command=self.toggle_mode)
+        self.mode_toggle.pack(side=tk.LEFT, padx=5)
+
+        self.profile_name_var = tk.StringVar()
+
         # メインノートブックとタブの作成
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # タブの作成
-        self.create_filename_tab()
-        self.create_destination_tab()
-        self.create_operations_tab()
-        
+
+        # 基本操作タブ
+        self.basic_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.basic_tab, text="基本操作")
+
+
+        # ファイル名コンポーネントタブ（空）
+        self.component_tab = ttk.Frame(self.notebook)
+        # ファイル名コンポーネントタブの中身を復活
+        self.components_frame = ttk.LabelFrame(self.component_tab, text="ファイル名コンポーネント")
+        self.components_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # 日付フォーマット
+        date_frame = ttk.Frame(self.components_frame)
+        date_frame.pack(fill=tk.X, pady=5)
+        ttk.Label(date_frame, text="日付フォーマット:").pack(side=tk.LEFT, padx=5)
+        date_formats = ["%Y%m%d", "%Y-%m-%d", "%d%m%Y", "%d-%m-%Y", "%m%d%Y", "%m-%d-%Y"]
+        self.date_combo = ttk.Combobox(date_frame, textvariable=self.date_format, values=date_formats, width=15)
+        self.date_combo.pack(side=tk.LEFT, padx=5)
+        ttk.Button(date_frame, text="日付を挿入", style="Placeholder.TButton", command=lambda: self.insert_placeholder("{date}")).pack(side=tk.LEFT, padx=5)
+
+        # 連番
+        seq_frame = ttk.Frame(self.components_frame)
+        seq_frame.pack(fill=tk.X, pady=5)
+        ttk.Label(seq_frame, text="連番:").pack(side=tk.LEFT, padx=5)
+        ttk.Spinbox(seq_frame, from_=1, to=9999, textvariable=self.sequence_number, width=5).pack(side=tk.LEFT, padx=5)
+        ttk.Label(seq_frame, text="桁数:").pack(side=tk.LEFT, padx=5)
+        ttk.Spinbox(seq_frame, from_=1, to=10, textvariable=self.sequence_digits, width=3).pack(side=tk.LEFT, padx=5)
+        ttk.Checkbutton(seq_frame, text="コピー時に自動増加", variable=self.auto_increment).pack(side=tk.LEFT, padx=5)
+        ttk.Button(seq_frame, text="連番を挿入", style="Placeholder.TButton", command=lambda: self.insert_placeholder("{seq}")).pack(side=tk.LEFT, padx=5)
+
+        # カスタムテキスト
+        text_frame = ttk.Frame(self.components_frame)
+        text_frame.pack(fill=tk.X, pady=5)
+        ttk.Label(text_frame, text="カスタムテキスト:").pack(side=tk.LEFT, padx=5)
+        ttk.Entry(text_frame, textvariable=self.custom_text, width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Button(text_frame, text="テキストを挿入", style="Placeholder.TButton", command=lambda: self.insert_placeholder("{text}")).pack(side=tk.LEFT, padx=5)
+
+        # 区切り文字
+        separator_frame = ttk.Frame(self.components_frame)
+        separator_frame.pack(fill=tk.X, pady=5)
+        ttk.Label(separator_frame, text="区切り文字:").pack(side=tk.LEFT, padx=5)
+        separators = ["_", "-", ".", " "]
+        for sep in separators:
+            ttk.Button(separator_frame, text=f'"{sep}"', width=3, command=partial(self.insert_text, sep)).pack(side=tk.LEFT, padx=2)
+        self.custom_separator = ttk.Entry(separator_frame, width=5)
+        self.custom_separator.pack(side=tk.LEFT, padx=5)
+        ttk.Button(separator_frame, text="挿入", command=lambda: self.insert_text(self.custom_separator.get())).pack(side=tk.LEFT, padx=2)
+        self.notebook.add(self.component_tab, text="ファイル名コンポーネント")
+
+
+
+
+
+
+        # 基本操作タブの内容作成
+        self.create_basic_tab()
+
+        # 既存のファイル名コンポーネントフレームをcomponent_tabに移動
+
+        # 既存のプロファイル管理フレームをprofile_tabに移動
+        # 新しいテンプレート管理タブを作成
+        self.template_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.template_tab, text="テンプレート管理")
+
+        # テンプレート管理フレームをテンプレート管理タブに配置
+        self.template_frame = ttk.LabelFrame(self.template_tab, text="テンプレート管理")
+        self.template_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        self.filename_templates = {}
+        self.template_name_var = tk.StringVar()
+
+        template_entry_frame = ttk.Frame(self.template_frame)
+        template_entry_frame.pack(fill=tk.X, pady=5)
+        ttk.Label(template_entry_frame, text="テンプレート名:").pack(side=tk.LEFT, padx=5)
+        ttk.Entry(template_entry_frame, textvariable=self.template_name_var, width=20).pack(side=tk.LEFT, padx=5)
+
+        template_button_frame = ttk.Frame(self.template_frame)
+        template_button_frame.pack(fill=tk.X, pady=5)
+        ttk.Button(template_button_frame, text="保存 (Ctrl+S)", command=self.save_filename_template).pack(side=tk.LEFT, padx=5)
+        self.template_combo = ttk.Combobox(template_button_frame, width=25)
+        self.template_combo.pack(side=tk.LEFT, padx=5)
+        ttk.Button(template_button_frame, text="読込 (Ctrl+L)", command=self.load_filename_template).pack(side=tk.LEFT, padx=5)
+        ttk.Button(template_button_frame, text="削除", command=self.delete_filename_template).pack(side=tk.LEFT, padx=5)
+
         # ステータスバー
         self.status_var = tk.StringVar()
         self.status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
@@ -47,6 +154,16 @@ class FileManagerApp:
         
         # 保存されたテンプレートがあれば読み込む
         self.load_settings()
+        
+        # 初期モード設定
+        self.toggle_mode()
+
+        # プレースホルダー用ボタンのカスタムスタイル
+        style = ttk.Style()
+        style.configure("Placeholder.TButton", foreground="blue", font=("Meiryo", 10, "bold"))
+        # ドラッグ＆ドロップ対応
+        self.root.drop_target_register(tkdnd.DND_FILES)
+        self.root.dnd_bind('<<Drop>>', self.on_drop_files)
 
     def setup_shortcuts(self):
         # コピー: Ctrl+C
@@ -81,149 +198,131 @@ class FileManagerApp:
         # キーボードイベントデバッグ用（開発時のみ使用）
         # self.root.bind_all("<Key>", self.debug_key_event)
 
-    def create_filename_tab(self):
-        filename_frame = ttk.Frame(self.notebook)
-        self.notebook.add(filename_frame, text="ファイル名設定")
-        
+    def create_basic_tab(self):
+        container = ttk.Frame(self.basic_tab)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        # Canvasとスクロールバー
+        canvas = tk.Canvas(container)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # スクロール可能な内部フレーム
+        scrollable_frame = ttk.Frame(canvas)
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
+
+        window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+        # マウスホイール対応
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
         # パターンプレビュー
-        preview_frame = ttk.LabelFrame(filename_frame, text="ファイル名プレビュー")
-        preview_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        self.preview_label = ttk.Label(preview_frame, textvariable=self.filename_pattern, font=("Courier", 12))
-        self.preview_label.pack(pady=10)
-        
-        # パターンコンポーネント
-        components_frame = ttk.LabelFrame(filename_frame, text="ファイル名コンポーネント")
-        components_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        # 日付フォーマット
-        date_frame = ttk.Frame(components_frame)
-        date_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(date_frame, text="日付フォーマット:").pack(side=tk.LEFT, padx=5)
-        date_formats = ["%Y%m%d", "%Y-%m-%d", "%d%m%Y", "%d-%m-%Y", "%m%d%Y", "%m-%d-%Y"]
-        self.date_combo = ttk.Combobox(date_frame, textvariable=self.date_format, values=date_formats)
-        self.date_combo.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-        
-        ttk.Button(date_frame, text="日付を挿入", command=lambda: self.insert_placeholder("{date}")).pack(side=tk.LEFT, padx=5)
-        
-        # 連番
-        seq_frame = ttk.Frame(components_frame)
-        seq_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(seq_frame, text="連番:").pack(side=tk.LEFT, padx=5)
-        ttk.Spinbox(seq_frame, from_=1, to=9999, textvariable=self.sequence_number, width=5).pack(side=tk.LEFT, padx=5)
-        
-        # 連番の桁数設定
-        ttk.Label(seq_frame, text="桁数:").pack(side=tk.LEFT, padx=5)
-        ttk.Spinbox(seq_frame, from_=1, to=10, textvariable=self.sequence_digits, width=3).pack(side=tk.LEFT, padx=5)
-        
-        # 連番自動増加チェックボックス
-        ttk.Checkbutton(seq_frame, text="コピー時に自動増加", variable=self.auto_increment).pack(side=tk.LEFT, padx=5)
-        
-        ttk.Button(seq_frame, text="連番を挿入", command=lambda: self.insert_placeholder("{seq}")).pack(side=tk.LEFT, padx=5)
-        
-        # カスタムテキスト
-        text_frame = ttk.Frame(components_frame)
-        text_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(text_frame, text="カスタムテキスト:").pack(side=tk.LEFT, padx=5)
-        ttk.Entry(text_frame, textvariable=self.custom_text).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-        ttk.Button(text_frame, text="テキストを挿入", command=lambda: self.insert_placeholder("{text}")).pack(side=tk.LEFT, padx=5)
-        
-        # 区切り文字
-        separator_frame = ttk.Frame(components_frame)
-        separator_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(separator_frame, text="区切り文字:").pack(side=tk.LEFT, padx=5)
-        separators = ["_", "-", ".", " "]
-        for sep in separators:
-            ttk.Button(separator_frame, text=f'"{sep}"', width=3, 
-                      command=partial(self.insert_text, sep)).pack(side=tk.LEFT, padx=2)
-        
-        # カスタム区切り文字用のエントリー
-        self.custom_separator = ttk.Entry(separator_frame, width=5)
-        self.custom_separator.pack(side=tk.LEFT, padx=5)
-        ttk.Button(separator_frame, text="挿入", 
-                  command=lambda: self.insert_text(self.custom_separator.get())).pack(side=tk.LEFT, padx=2)
-        
+        preview_frame = ttk.LabelFrame(scrollable_frame, text="ファイル名プレビュー")
+        preview_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.preview_label = ttk.Label(preview_frame, textvariable=self.filename_pattern, font=("Courier", 16, "bold"))
+        self.preview_label.pack(fill=tk.BOTH, expand=True, pady=5)
+
+
         # パターン編集
-        pattern_frame = ttk.LabelFrame(filename_frame, text="ファイル名パターン")
-        pattern_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        self.pattern_entry = ttk.Entry(pattern_frame, font=("Courier", 12))
-        self.pattern_entry.pack(fill=tk.X, padx=5, pady=5, expand=True)
-        
+        pattern_frame = ttk.LabelFrame(scrollable_frame, text="ファイル名パターン")
+        pattern_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.pattern_entry = ttk.Entry(pattern_frame, font=("Courier", 12), width=30)
+        self.pattern_entry.pack(padx=5, pady=5)
         button_frame = ttk.Frame(pattern_frame)
         button_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        ttk.Button(button_frame, text="プレビュー更新 (F5)", command=self.update_filename_preview).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="クリップボードにコピー (Ctrl+C)", command=self.copy_to_clipboard).pack(side=tk.LEFT, padx=5)
-        
-        # テンプレート管理
-        template_frame = ttk.LabelFrame(filename_frame, text="テンプレート管理")
-        template_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        self.filename_templates = {}
-        self.template_name_var = tk.StringVar()
-        
-        template_entry_frame = ttk.Frame(template_frame)
-        template_entry_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(template_entry_frame, text="テンプレート名:").pack(side=tk.LEFT, padx=5)
-        ttk.Entry(template_entry_frame, textvariable=self.template_name_var).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-        
-        template_button_frame = ttk.Frame(template_frame)
-        template_button_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Button(template_button_frame, text="テンプレート保存 (Ctrl+S)", command=self.save_filename_template).pack(side=tk.LEFT, padx=5)
-        
-        self.template_combo = ttk.Combobox(template_button_frame, width=30)
-        self.template_combo.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-        
-        ttk.Button(template_button_frame, text="テンプレート読込 (Ctrl+L)", command=self.load_filename_template).pack(side=tk.LEFT, padx=5)
-        ttk.Button(template_button_frame, text="テンプレート削除", command=self.delete_filename_template).pack(side=tk.LEFT, padx=5)
 
-    def create_destination_tab(self):
-        destination_frame = ttk.Frame(self.notebook)
-        self.notebook.add(destination_frame, text="保存先設定")
-        
-        # 現在の保存先
-        current_dest_frame = ttk.LabelFrame(destination_frame, text="現在の保存先")
-        current_dest_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        self.dest_label = ttk.Label(current_dest_frame, textvariable=self.destination_path, font=("Courier", 10))
+
+
+        # ファイル選択
+        file_frame = ttk.LabelFrame(scrollable_frame, text="ファイル選択")
+        file_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        batch_frame = ttk.Frame(file_frame)
+        batch_frame.pack(fill=tk.X, pady=5)
+        ttk.Checkbutton(batch_frame, text="一括処理モード", variable=self.batch_mode, command=self.toggle_batch_mode).pack(side=tk.LEFT, padx=5)
+        self.single_file_frame = ttk.Frame(file_frame)
+        self.single_file_frame.pack(fill=tk.X, pady=5)
+        self.file_label = ttk.Label(self.single_file_frame, textvariable=self.selected_file_path, font=("Courier", 10))
+        self.file_label.pack(pady=10, fill=tk.X)
+        ttk.Button(self.single_file_frame, text="ファイル参照... (Ctrl+O)", command=self.browse_file, width=12).pack(pady=5)
+        self.batch_file_frame = ttk.Frame(file_frame)
+        self.files_listbox = tk.Listbox(self.batch_file_frame, height=6)
+        scrollbar2 = ttk.Scrollbar(self.batch_file_frame, orient="vertical", command=self.files_listbox.yview)
+        self.files_listbox.configure(yscrollcommand=scrollbar2.set)
+        self.files_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        scrollbar2.pack(side=tk.RIGHT, fill=tk.Y, padx=2, pady=5)
+        batch_button_frame = ttk.Frame(self.batch_file_frame)
+        batch_button_frame.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Button(batch_button_frame, text="ファイル追加", command=self.add_files, width=12).pack(side=tk.LEFT, padx=5)
+        ttk.Button(batch_button_frame, text="選択削除", command=self.remove_selected_file, width=12).pack(side=tk.LEFT, padx=5)
+        ttk.Button(batch_button_frame, text="すべて削除", command=self.clear_files, width=12).pack(side=tk.LEFT, padx=5)
+        # ファイルの送り先
+        dest_frame = ttk.LabelFrame(scrollable_frame, text="ファイルの送り先")
+        dest_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.dest_label = ttk.Label(dest_frame, textvariable=self.destination_path, font=("Courier", 10))
         self.dest_label.pack(pady=10, fill=tk.X)
-        
-        # 保存先選択
-        select_frame = ttk.Frame(current_dest_frame)
+        select_frame = ttk.Frame(dest_frame)
         select_frame.pack(fill=tk.X, pady=5)
+        ttk.Button(select_frame, text="参照... (Ctrl+D)", command=self.browse_destination, width=12).pack(side=tk.LEFT, padx=5)
+
+        # 操作ボタン
+        op_frame = ttk.LabelFrame(scrollable_frame, text="操作")
+        op_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        ttk.Button(op_frame, text="名前コピー (Ctrl+C)", command=self.copy_to_clipboard, width=20).pack(padx=2, pady=2)
+        ttk.Button(op_frame, text="ファイル名変更 (Ctrl+R)", command=self.rename_file, width=20).pack(padx=2, pady=2)
+        ttk.Button(op_frame, text="ファイル移動 (Ctrl+M)", command=self.move_file, width=20).pack(padx=2, pady=2)
+        ttk.Button(op_frame, text="名前変更＆移動 (Ctrl+Shift+M)", command=self.rename_and_move_file, width=20).pack(padx=2, pady=2)
+
+        # ショートカット一覧
+        self.shortcut_frame = ttk.LabelFrame(scrollable_frame, text="ショートカットキー")
+        self.shortcut_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        shortcuts = [
+            "Ctrl+C: クリップボードにコピー",
+            "Ctrl+R: ファイル名変更",
+            "Ctrl+M: ファイル移動",
+            "Ctrl+Shift+M: 名前変更＆移動",
+            "Ctrl+O: ファイル選択",
+            "Ctrl+D: 保存先選択",
+            "Ctrl+S: テンプレート保存",
+            "Ctrl+L: テンプレート読込"
+        ]
+        for i, shortcut in enumerate(shortcuts):
+            if i % 3 == 0:
+                row_frame = ttk.Frame(self.shortcut_frame)
+                row_frame.pack(fill=tk.X, pady=2)
+            ttk.Label(row_frame, text=shortcut, width=25).pack(side=tk.LEFT, padx=5)
+
+    def create_advanced_tab(self):
+        advanced_frame = ttk.Frame(self.notebook)
+        # self.notebook.add(advanced_frame, text="詳細設定")  # 詳細設定タブは削除
         
-        ttk.Button(select_frame, text="参照... (Ctrl+D)", command=self.browse_destination).pack(side=tk.LEFT, padx=5)
         
-        # 保存先テンプレート
-        template_frame = ttk.LabelFrame(destination_frame, text="保存先テンプレート")
-        template_frame.pack(fill=tk.X, padx=10, pady=10)
-        
+        # 保存先テンプレート管理
+        template_frame = ttk.LabelFrame(advanced_frame, text="保存先テンプレート")
+        template_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.dest_templates = {}
         self.dest_template_name_var = tk.StringVar()
-        
         template_entry_frame = ttk.Frame(template_frame)
         template_entry_frame.pack(fill=tk.X, pady=5)
-        
         ttk.Label(template_entry_frame, text="テンプレート名:").pack(side=tk.LEFT, padx=5)
         ttk.Entry(template_entry_frame, textvariable=self.dest_template_name_var).pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-        
         template_button_frame = ttk.Frame(template_frame)
         template_button_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Button(template_button_frame, text="テンプレート保存", command=self.save_destination_template).pack(side=tk.LEFT, padx=5)
-        
+        ttk.Button(template_button_frame, text="保存", command=self.save_destination_template).pack(side=tk.LEFT, padx=5)
         self.dest_template_combo = ttk.Combobox(template_button_frame, width=30)
         self.dest_template_combo.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-        
-        ttk.Button(template_button_frame, text="テンプレート読込", command=self.load_destination_template).pack(side=tk.LEFT, padx=5)
-        ttk.Button(template_button_frame, text="テンプレート削除", command=self.delete_destination_template).pack(side=tk.LEFT, padx=5)
+        ttk.Button(template_button_frame, text="読込", command=self.load_destination_template).pack(side=tk.LEFT, padx=5)
+        ttk.Button(template_button_frame, text="削除", command=self.delete_destination_template).pack(side=tk.LEFT, padx=5)
 
     def create_operations_tab(self):
         operations_frame = ttk.Frame(self.notebook)
@@ -406,7 +505,8 @@ class FileManagerApp:
             "pattern": pattern,
             "date_format": self.date_format.get(),
             "custom_text": self.custom_text.get(),
-            "sequence_digits": self.sequence_digits.get()  # 連番桁数も保存
+            "sequence_digits": self.sequence_digits.get(),  # 連番桁数も保存
+            "destination_path": self.destination_path.get()  # 保存先も保存
         }
         
         self.update_filename_templates_combo()
@@ -434,6 +534,10 @@ class FileManagerApp:
         # 連番桁数があれば設定
         if "sequence_digits" in template:
             self.sequence_digits.set(template["sequence_digits"])
+        
+        # 保存先パスがあれば設定
+        if "destination_path" in template:
+            self.destination_path.set(template["destination_path"])
         
         self.update_filename_preview()
         self.status_var.set(f"ファイル名テンプレートを読み込みました: {template_name}")
@@ -473,27 +577,16 @@ class FileManagerApp:
         self.status_var.set(f"保存先テンプレートを保存しました: {template_name}")
 
     def update_destination_templates_combo(self):
-        template_names = list(self.dest_templates.keys())
-        self.dest_template_combo['values'] = template_names
-        if template_names:
-            self.dest_template_combo.current(0)
+        # 詳細設定タブ削除に伴い空関数化
+        pass
 
     def load_destination_template(self):
-        template_name = self.dest_template_combo.get()
-        if not template_name or template_name not in self.dest_templates:
-            messagebox.showwarning("警告", "テンプレートが選択されていないか存在しません")
-            return
-        
-        destination = self.dest_templates[template_name]
-        self.destination_path.set(destination)
-        self.status_var.set(f"保存先テンプレートを読み込みました: {template_name}")
+        # 詳細設定タブ削除に伴い空関数化
+        pass
 
     def delete_destination_template(self):
-        template_name = self.dest_template_combo.get()
-        if not template_name or template_name not in self.dest_templates:
-            messagebox.showwarning("警告", "テンプレートが選択されていないか存在しません")
-            return
-        
+        # 詳細設定タブ削除に伴い空関数化
+        pass
         del self.dest_templates[template_name]
         self.update_destination_templates_combo()
         self.save_settings()
@@ -1024,31 +1117,57 @@ class FileManagerApp:
         else:
             # 通常のPythonスクリプトとして実行される場合
             application_path = os.path.dirname(os.path.abspath(__file__))
-        
+
         settings_path = os.path.join(application_path, 'file_manager_settings.json')
-        
+
         try:
             if os.path.exists(settings_path):
                 with open(settings_path, 'r') as f:
                     settings = json.load(f)
-                
+
                 if "filename_templates" in settings:
                     self.filename_templates = settings["filename_templates"]
                     self.update_filename_templates_combo()
-                
+
                 if "dest_templates" in settings:
                     self.dest_templates = settings["dest_templates"]
-                    self.update_destination_templates_combo()
-                
+                    # 詳細設定タブ削除に伴い、dest_template_comboは存在しないため更新処理は行わない
+
                 if "sequence_digits" in settings:
                     self.sequence_digits.set(settings["sequence_digits"])
-                
+
                 if "auto_increment" in settings:
                     self.auto_increment.set(settings["auto_increment"])
-                    
+
+
                 self.status_var.set(f"設定を読み込みました: {settings_path}")
+
+                # テンプレートが1つ以上あれば、最初のテンプレートを自動で読み込む
+                if self.filename_templates:
+                    first_template_name = list(self.filename_templates.keys())[0]
+                    template = self.filename_templates[first_template_name]
+                    self.pattern_entry.delete(0, tk.END)
+                    self.pattern_entry.insert(0, template["pattern"])
+                    self.date_format.set(template.get("date_format", ""))
+                    self.custom_text.set(template.get("custom_text", ""))
+                    if "sequence_digits" in template:
+                        self.sequence_digits.set(template["sequence_digits"])
+                    if "destination_path" in template:
+                        self.destination_path.set(template["destination_path"])
+                    self.update_filename_preview()
+                    self.status_var.set(f"テンプレート「{first_template_name}」を自動で読み込みました")
         except Exception as e:
             messagebox.showerror("エラー", f"設定読み込み中にエラーが発生しました: {str(e)}")
+
+    def save_profile(self):
+        name = self.profile_name_var.get()
+        if not name:
+            messagebox.showwarning("警告", "プロファイル名を入力してください")
+            return
+
+        pattern = self.pattern_entry.get()
+        dest = self.destination_path.get()
+
     
     # キーボードイベントのデバッグ用メソッド
     def debug_key_event(self, event):
@@ -1057,8 +1176,80 @@ class FileManagerApp:
         print(key_info)
         self.status_var.set(key_info)
 
+    def toggle_mode(self):
+        """
+        かんたんモード(True)と詳細モード(False)の切り替え
+        """
+        # 今回は詳細設定タブを削除したので、単純にファイル選択部分の切り替えのみ
+        if self.simple_mode.get():
+            # かんたんモード
+            try:
+                self.batch_file_frame.pack_forget()
+                self.files_listbox.pack_forget()
+                self.file_label.pack(fill='x', pady=10)
+                self.single_file_frame.pack(fill='x', pady=5)
+            except:
+                pass
+        else:
+            # 詳細モード
+            try:
+                self.single_file_frame.pack(fill='x', pady=5)
+                self.batch_file_frame.pack(fill='x', pady=5)
+            except:
+                pass
+
+    def _close_component_window(self):
+        if self.component_window is not None:
+            try:
+                self.component_window.destroy()
+            except:
+                pass
+            self.component_window = None
+            # 詳細モードに戻すときと同様に、components_frameを基本タブに戻す
+            try:
+                self.components_frame.master = self.basic_tab.winfo_children()[0].winfo_children()[0]
+                self.components_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            except:
+                pass
+    def on_drop_files(self, event):
+        # 複数ファイルの場合は最初のファイルのみ使用
+        files = self.root.tk.splitlist(event.data)
+        if files:
+            file_path = files[0]
+            self.selected_file_path.set(file_path)
+            self.status_var.set(f"ドロップされたファイルを選択しました: {file_path}")
+    def toggle_component_frame(self):
+        if hasattr(self, 'components_frame'):
+            if self.show_component_frame.get():
+                self.components_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            else:
+                self.components_frame.pack_forget()
+
+    def toggle_profile_frame(self):
+        if hasattr(self, 'profile_frame'):
+            if self.show_profile_frame.get():
+                self.profile_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            else:
+                self.profile_frame.pack_forget()
+
+    # 送り先ラベルへのD&D対応
+    def enable_dest_drop(self):
+        self.dest_label.drop_target_register(tkdnd.DND_FILES)
+        self.dest_label.dnd_bind('<<Drop>>', self.on_drop_destination)
+
+    def on_drop_destination(self, event):
+        files = self.root.tk.splitlist(event.data)
+        if files:
+            path = files[0]
+            if os.path.isdir(path):
+                self.destination_path.set(path)
+                self.status_var.set(f"ドロップされたフォルダを送り先に設定: {path}")
+            else:
+                self.status_var.set("フォルダをドロップしてください。")
+            self.update_filename_preview()
+
 def main():
-    root = tk.Tk()
+    root = tkdnd.TkinterDnD.Tk()
     app = FileManagerApp(root)
     root.mainloop()
 
